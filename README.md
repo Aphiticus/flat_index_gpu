@@ -1,7 +1,7 @@
 # flat_index_gpu
 
 A fast, simple brute-force vector search on GPU or CPU  
-—an easy, plug-and-play alternative to FAISS for Windows and Linux.
+—an easy, plug-and-play alternative to FAISS specifically for fast vector searching, not associative lookup for Windows and Linux.
 
 Just drop `flat_index_gpu.py` into your project and get started.
 
