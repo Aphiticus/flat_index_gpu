@@ -6,6 +6,13 @@ A fast, simple brute-force vector search on GPU or CPU
 Just drop `flat_index_gpu.py` into your project and get started.
 
 ---
+When to Use
+You need fast, accurate nearest neighbor search for dense vectors.
+
+You want a simple, dependency-free alternative to FAISS, especially on Windows.
+
+Your dataset fits in GPU or CPU memory (for huge datasets, use approximate/partitioned methods).
+---
 
 ## Features
 
