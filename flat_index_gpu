@@ -1,0 +1,92 @@
+# Fast brute-force flat index for nearest neighbor search using PyTorch and GPU (or CPU fallback).
+# Supports dynamic precision (float16 or float32).
+# Works well with large datasets and can be used for efficient similarity search.
+
+import numpy as np
+import torch
+
+class FlatIndexGPU:
+    def __init__(self, dim, dtype=None, device=None):
+        """
+        Initialize the index.
+
+        dim:    Dimension of input vectors.
+        dtype:  'float16', 'float32', or None (auto-select: float16 if CUDA, else float32).
+        device: 'cuda', 'cpu', or None (auto-selects CUDA if available).
+        """
+        self.dim = dim
+        self.device = device or ('cuda' if torch.cuda.is_available() else 'cpu')
+        if dtype:
+            self.dtype = torch.float16 if dtype == 'float16' else torch.float32
+        else:
+            self.dtype = torch.float16 if self.device == 'cuda' else torch.float32
+        self.protos = None
+
+    def add(self, vecs, append=False):
+        """
+        Add or append vectors to the index.
+
+        vecs:    Numpy array of shape (N, D).
+        append:  If True, add to existing. If False, replace all vectors.
+        """
+        arr = np.ascontiguousarray(vecs.astype(np.float16 if self.dtype == torch.float16 else np.float32))
+        tens = torch.from_numpy(arr).to(self.device).to(self.dtype)
+        if append and self.protos is not None:
+            self.protos = torch.cat([self.protos, tens], dim=0)
+        else:
+            self.protos = tens
+
+    def search(self, queries, topk=1, batch_size=1024):
+        """
+        Find nearest neighbors for input queries.
+
+        queries:    Numpy array of shape (N, D).
+        topk:       Number of nearest neighbors to return.
+        batch_size: Query batch size for efficiency.
+
+        Returns:    (indices, distances) arrays, both shape (N, topk).
+        """
+        ids, dists = [], []
+        N = queries.shape[0]
+        for i in range(0, N, batch_size):
+            q = torch.from_numpy(queries[i:i+batch_size]).to(self.device).to(self.dtype)
+            dist = torch.cdist(q, self.protos, p=2)
+            vals, idxs = torch.topk(dist, k=topk, largest=False)
+            ids.append(idxs.cpu().numpy())
+            dists.append(vals.cpu().numpy())
+        return np.concatenate(ids, axis=0), np.concatenate(dists, axis=0)
+
+    def to(self, device):
+        """
+        Move index to specified device ('cuda' or 'cpu').
+        """
+        self.device = device
+        if self.protos is not None:
+            self.protos = self.protos.to(device)
+        if self.device == 'cuda' and self.dtype != torch.float16:
+            self.dtype = torch.float16
+            if self.protos is not None:
+                self.protos = self.protos.half()
+        elif self.device == 'cpu' and self.dtype != torch.float32:
+            self.dtype = torch.float32
+            if self.protos is not None:
+                self.protos = self.protos.float()
+
+    def save(self, path):
+        """
+        Save the index to a file.
+        """
+        torch.save({
+            'protos': self.protos.cpu(),
+            'dim': self.dim,
+            'dtype': str(self.dtype),
+        }, path)
+
+    def load(self, path):
+        """
+        Load the index from a file.
+        """
+        data = torch.load(path, map_location=self.device)
+        self.dim = data['dim']
+        self.dtype = torch.float16 if data['dtype'] == 'torch.float16' else torch.float32
+        self.protos = data['protos'].to(self.device).to(self.dtype)
